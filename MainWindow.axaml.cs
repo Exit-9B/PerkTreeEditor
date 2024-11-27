@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Archives;
 using Mutagen.Bethesda.Environments;
@@ -37,6 +39,7 @@ public partial class MainWindow : Window
         Skyrim.ActorValueInformation.AVRestoration,
     ];
 
+    private readonly IGameEnvironment<ISkyrimMod, ISkyrimModGetter> GameEnv;
     private readonly Dictionary<string, WeakReference<Texture>> TextureHolder = [];
 
     public MainWindow()
@@ -45,8 +48,8 @@ public partial class MainWindow : Window
 
         SkydomeView view = this.FindControl<SkydomeView>("View")!;
 
-        using var env = GameEnvironment.Typical.Skyrim(SkyrimRelease.SkyrimSE);
-        var dataFolder = env.DataFolderPath;
+        GameEnv = GameEnvironment.Typical.Skyrim(SkyrimRelease.SkyrimSE);
+        var dataFolder = GameEnv.DataFolderPath;
 
         Texture? ResolveTexture(string path)
         {
@@ -78,11 +81,21 @@ public partial class MainWindow : Window
 
         LoadDefaultSkydome(dataFolder);
         LoadCommonAssets(dataFolder);
-        int index = 0;
-        if (DefaultTrees[index].TryResolve(env.LinkCache, out var actorValueInfo))
+
+        ComboBox skillsCombo = this.FindControl<ComboBox>("SkillCombo")!;
+        IEnumerable<string?> ItemsSource()
         {
-            view.ShowPerks(index, actorValueInfo);
+            foreach (var av in DefaultTrees)
+            {
+                if (av.TryResolve(GameEnv.LinkCache, out var actorValueInfo))
+                {
+                    yield return actorValueInfo.Name?.String;
+                }
+            }
         }
+
+        skillsCombo.ItemsSource = ItemsSource();
+        skillsCombo.SelectedIndex = 0;
     }
 
     private void LoadDefaultSkydome(DirectoryPath dataFolder)
@@ -184,4 +197,39 @@ public partial class MainWindow : Window
         return default;
     }
 
+    private void Window_Closed(object? sender, System.EventArgs e)
+    {
+        GameEnv?.Dispose();
+    }
+
+    private void ComboBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count != 1)
+            return;
+
+        var item = e.AddedItems[0] as string;
+        if (item is null)
+            return;
+
+        for (int i = 0; i < DefaultTrees.Count; ++i)
+        {
+            if (DefaultTrees[i].TryResolve(GameEnv.LinkCache, out var actorValueInfo))
+            {
+                if (actorValueInfo.Name?.String == item)
+                {
+                    this.FindControl<SkydomeView>("View")!.ShowPerks(i, actorValueInfo);
+                }
+            }
+        }
+    }
+
+    private void FOV_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+    {
+        this.FindControl<SkydomeView>("View")!.FOV = (float)e.NewValue;
+    }
+
+    private void CameraLookAtZ_ValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+    {
+        this.FindControl<SkydomeView>("View")!.SkillsLookAtZ = (float)e.NewValue;
+    }
 }

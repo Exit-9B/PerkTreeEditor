@@ -15,51 +15,15 @@ namespace PerkTreeEditor;
 
 public class SkydomeView : OpenGlControlBase
 {
-    internal float NearClip { get; set; } = 1.0f;
-    internal float FarClip { get; set; } = 20480.0f;
-    internal float FOV { get; set; } = 50.0f;
-    internal float LineScale { get; set; } = 0.1175f;
-    internal Vector3 SkillsLookAt { get; set; } = new(0.0f, 0.0f, 5.0f);
-    internal float StarXIncrement { get; set; } = 5.0f;
-    internal float StarYIncrement { get; set; } = 15.0f;
-    internal float StarZIncrement { get; set; } = -9.0f;
-    internal float StarZInitialOffset { get; set; } = 5.0f;
-    internal float StarScale { get; set; } = 0.15f;
+    private float _nearClip = 1.0f;
+    private float _farClip = 20480.0f;
+    private float _fov = 36.0f;
+    private float _skillsLookAtX = 0.0f;
+    private float _skillsLookAtY = 0.0f;
+    private float _skillsLookAtZ = 12.0f;
 
-    private int selectedIndex = 0;
-    internal int SelectedIndex
-    {
-        get => selectedIndex;
-        set
-        {
-            selectedIndex = value;
-            CameraLookAt =
-                Skydome?.FindBlockByName<NiNode>($"Point{value:00}")?.Translation
-                + SkillsLookAt
-                ?? Vector3.Zero;
-
-            var targetShader = _cImageShaders[selectedIndex];
-            _cImageShaders.ForEach(shader =>
-            {
-                if (shader is not null)
-                    shader.GetBaseColor().A = shader == targetShader ? 1.0f : 0.0f;
-            });
-
-            RequestNextFrameRendering();
-        }
-    }
-
-    internal OpenGlShape.TextureResolver ResolveTexture { get; set; } = _ => null;
-
-    internal PerkTree? SelectedTree { get; set; }
-
-    private NifFile? Skydome { get; set; }
-    private NifFile? PerkStars { get; set; }
-    private NifFile? PerkLine { get; set; }
-
-    private Vector3 CameraPosition { get; set; }
-    private Vector3 CameraUp { get; set; }
-    private Vector3 CameraLookAt { get; set; }
+    private int _selectedIndex = 0;
+    private PerkTree.Node? draggingNode;
 
     private readonly BSEffectShaderProgram _effectShaderProgram = new();
 
@@ -74,6 +38,97 @@ public class SkydomeView : OpenGlControlBase
     private bool _reloadLine;
 
     private GL? gl;
+
+    internal float NearClip
+    {
+        get => _nearClip;
+        set
+        {
+            _nearClip = value;
+            RequestNextFrameRendering();
+        }
+    }
+
+    internal float FarClip
+    {
+        get => _farClip;
+        set
+        {
+            _farClip = value;
+            RequestNextFrameRendering();
+        }
+    }
+
+    internal float FOV
+    {
+        get => _fov;
+        set
+        {
+            _fov = value;
+            RequestNextFrameRendering();
+        }
+    }
+
+    internal float SkillsLookAtZ
+    {
+        get => _skillsLookAtZ;
+        set
+        {
+            _skillsLookAtZ = value;
+            UpdateLookAt();
+            RequestNextFrameRendering();
+        }
+    }
+
+    internal Vector3 SkillsLookAt
+    {
+        get => new(_skillsLookAtX, _skillsLookAtY, _skillsLookAtZ);
+        set
+        {
+            _skillsLookAtX = value.X;
+            _skillsLookAtY = value.Y;
+            _skillsLookAtZ = value.Z;
+            UpdateLookAt();
+            RequestNextFrameRendering();
+        }
+    }
+
+    internal float LineScale { get; set; } = 0.1175f;
+    internal float StarXIncrement { get; set; } = 5.0f;
+    internal float StarYIncrement { get; set; } = 15.0f;
+    internal float StarZIncrement { get; set; } = -9.0f;
+    internal float StarZInitialOffset { get; set; } = 5.0f;
+    internal float StarScale { get; set; } = 0.15f;
+
+    internal int SelectedIndex
+    {
+        get => _selectedIndex;
+        set
+        {
+            _selectedIndex = value;
+            UpdateLookAt();
+
+            var targetShader = _cImageShaders[_selectedIndex];
+            _cImageShaders.ForEach(shader =>
+            {
+                if (shader is not null)
+                    shader.GetBaseColor().A = shader == targetShader ? 1.0f : 0.0f;
+            });
+
+            RequestNextFrameRendering();
+        }
+    }
+    internal OpenGlShape.TextureResolver ResolveTexture { get; set; } = _ => null;
+
+    internal PerkTree? SelectedTree { get; set; }
+
+    private NifFile? Skydome { get; set; }
+    private NifFile? PerkStars { get; set; }
+    private NifFile? PerkLine { get; set; }
+
+    private Vector3 CameraPosition { get; set; }
+    private Vector3 CameraUp { get; set; }
+    private Vector3 CameraLookAt { get; set; }
 
     protected override void OnOpenGlInit(GlInterface gl_)
     {
@@ -169,7 +224,7 @@ public class SkydomeView : OpenGlControlBase
             shape.Draw(gl, _effectShaderProgram.Uniforms);
         }
 
-        var point = Skydome?.FindBlockByName<NiNode>($"Point{selectedIndex:00}");
+        var point = Skydome?.FindBlockByName<NiNode>($"Point{_selectedIndex:00}");
         if (SelectedTree is not null && point is not null)
         {
             var parentTransform = point.WorldTransform(Skydome!);
@@ -267,6 +322,14 @@ public class SkydomeView : OpenGlControlBase
                 }
             }
         }
+    }
+
+    private void UpdateLookAt()
+    {
+        CameraLookAt =
+            Skydome?.FindBlockByName<NiNode>($"Point{_selectedIndex:00}")?.Translation
+            + SkillsLookAt
+            ?? Vector3.Zero;
     }
 
     private Vector3 GetPerkPosition(PerkTree.Node node)
