@@ -88,6 +88,7 @@ public partial class MainWindow : Window
             Skyrim.ActorValueInformation.AVConjuration,
             Skyrim.ActorValueInformation.AVDestruction,
             Skyrim.ActorValueInformation.AVRestoration,
+            Skyrim.ActorValueInformation.AVAlteration,
         ],
         SkydomePath = "Meshes/Interface/INTPerkSkydome.nif",
         MeshArchive = "Skyrim - Meshes1.bsa",
