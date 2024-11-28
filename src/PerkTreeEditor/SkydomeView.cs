@@ -108,6 +108,9 @@ public class SkydomeView : OpenGlControlBase
             _selectedIndex = value;
             UpdateLookAt();
 
+            if (_selectedIndex < 0 || _selectedIndex >= _cImageShaders.Count)
+                return;
+
             var targetShader = _cImageShaders[_selectedIndex];
             _cImageShaders.ForEach(shader =>
             {
