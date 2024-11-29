@@ -1,11 +1,15 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
+using Avalonia;
+using Avalonia.Input;
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Controls;
+using Avalonia.Rendering;
 using Mutagen.Bethesda.Skyrim;
 using NiflySharp;
 using NiflySharp.Blocks;
 using NiflySharp.Structs;
 using Silk.NET.OpenGL;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -13,8 +17,12 @@ using System.Numerics;
 
 namespace PerkTreeEditor;
 
-public class SkydomeView : OpenGlControlBase
+public class SkydomeView : OpenGlControlBase, ICustomHitTest
 {
+    const float ClickToleranceMin = 0.15f;
+    const float ClickToleranceScale = 0.025f;
+    const float PerkYMax = 18f;
+
     private float _nearClip = 1.0f;
     private float _farClip = 20480.0f;
     private float _fov = 36.0f;
@@ -24,6 +32,8 @@ public class SkydomeView : OpenGlControlBase
 
     private int _selectedIndex = 0;
     private PerkTree.Node? draggingNode;
+
+    private Transform _cachedPointTransform;
 
     private readonly BSEffectShaderProgram _effectShaderProgram = new();
 
@@ -227,10 +237,9 @@ public class SkydomeView : OpenGlControlBase
             shape.Draw(gl, _effectShaderProgram.Uniforms);
         }
 
-        var point = Skydome?.FindBlockByName<NiNode>($"Point{_selectedIndex:00}");
-        if (SelectedTree is not null && point is not null)
+        if (SelectedTree is not null)
         {
-            var parentTransform = point.WorldTransform(Skydome!);
+            var parentTransform = _cachedPointTransform;
             var zaxis = Vector3.Normalize(-CameraLookAt);
             var xaxis = Vector3.Normalize(Vector3.Cross(CameraUp, zaxis));
             var yaxis = Vector3.Cross(zaxis, xaxis);
@@ -329,10 +338,12 @@ public class SkydomeView : OpenGlControlBase
 
     private void UpdateLookAt()
     {
-        CameraLookAt =
-            Skydome?.FindBlockByName<NiNode>($"Point{_selectedIndex:00}")?.Translation
-            + SkillsLookAt
-            ?? Vector3.Zero;
+        NiNode? point = Skydome?.FindBlockByName<NiNode>($"Point{_selectedIndex:00}");
+        if (point is not null)
+        {
+            CameraLookAt = point.Translation + SkillsLookAt;
+            _cachedPointTransform = point.WorldTransform(Skydome!);
+        }
     }
 
     private Vector3 GetPerkPosition(PerkTree.Node node)
@@ -442,5 +453,134 @@ public class SkydomeView : OpenGlControlBase
                 controller.UpdateTransform(obj, data, cameraIntro.StopTime);
             }
         }
+    }
+
+    public bool HitTest(Point point) => Bounds.Contains(point);
+
+    private (float x, float y) PointToPerkCoordinates(Point p)
+    {
+        var pointMatrix = _cachedPointTransform.ToMatrix();
+        if (!Matrix4x4.Invert(pointMatrix, out Matrix4x4 pointInverse))
+            return (float.NaN, float.NaN);
+
+        Matrix4x4 view = Matrix4x4.CreateLookTo(CameraPosition, CameraLookAt, CameraUp);
+        if (!Matrix4x4.Invert(view, out Matrix4x4 viewInverse))
+            return (float.NaN, float.NaN);
+
+        // Convert from framebuffer to screen space
+        double screenX = p.X / Bounds.Width * 2.0 - 1.0;
+        double screenY = p.Y / Bounds.Height * -2.0 + 1.0;
+        double viewDimY = Math.Tan(double.DegreesToRadians(FOV * 0.5));
+        double viewDimX = viewDimY * Bounds.Width / Bounds.Height;
+
+        // Compute Plucker matrix
+        Vector4 A = new Vector4(CameraPosition, 1f);
+        Vector4 VB = new Vector4((float)(screenX * viewDimX), (float)(screenY * viewDimY), -1f, 0f);
+        Vector4 B = Vector4.Transform(VB, viewInverse);
+
+        Matrix4x4 Lx = new Matrix4x4(
+            0f,
+            A[0] * B[1] - B[0] * A[1],
+            A[0] * B[2] - B[0] * A[2],
+            A[0] * B[3] - B[0] * A[3],
+            A[1] * B[0] - B[1] * A[0],
+            0f,
+            A[1] * B[2] - B[1] * A[2],
+            A[1] * B[3] - B[1] * A[3],
+            A[2] * B[0] - B[2] * A[0],
+            A[2] * B[1] - B[2] * A[1],
+            0f,
+            A[2] * B[3] - B[2] * A[3],
+            A[3] * B[0] - B[3] * A[0],
+            A[3] * B[1] - B[3] * A[1],
+            A[3] * B[2] - B[3] * A[2],
+            0f);
+
+        // Compute constellation plane in world coordinates
+        Matrix4x4 pointInverseTranspose = Matrix4x4.Transpose(pointInverse);
+        Vector4 E = Vector4.Transform(
+            new Vector4(
+                0f,
+                1f / StarYIncrement,
+                1f / StarZIncrement,
+                -StarZInitialOffset / StarZIncrement),
+            pointInverseTranspose);
+
+        // Compute line-plane intersection
+        Vector4 X = Vector4.Transform(E, Lx);
+        X /= X.W;
+
+        // Compute local translation of stats node
+        Vector4 nodePosition = Vector4.Transform(X, pointInverse);
+
+        float x = -nodePosition.X / StarXIncrement;
+        float y = nodePosition.Y / StarYIncrement;
+        if (y > PerkYMax)
+            return (float.NaN, float.NaN);
+        return (x, y);
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        if (draggingNode is null)
+            return;
+
+        var position = e.GetPosition(this);
+        if (!Bounds.Contains(position))
+            return;
+
+        var (x, y) = PointToPerkCoordinates(position);
+        if (float.IsNaN(x) || float.IsNaN(y))
+            return;
+
+        draggingNode.X = x;
+        draggingNode.Y = y;
+
+        RequestNextFrameRendering();
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        if (SelectedTree is null)
+            return;
+
+        var point = e.GetCurrentPoint(this);
+        if (point.Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+            return;
+
+        var position = point.Position;
+        var (x, y) = PointToPerkCoordinates(position);
+
+        PerkTree.Node? nearestNode = null;
+        float nearestDistance = float.MaxValue;
+        foreach (var (index, node) in SelectedTree.Nodes)
+        {
+            if (index == 0)
+                continue;
+
+            float deltaX = node.X - x;
+            float deltaY = node.Y - y;
+            float distance = (float)Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
+            if (distance < nearestDistance)
+            {
+                nearestNode = node;
+                nearestDistance = distance;
+            }
+        }
+
+        if (nearestNode is not null &&
+            nearestDistance < ClickToleranceMin + Math.Max(0f, nearestNode.Y * ClickToleranceScale))
+        {
+            draggingNode = nearestNode;
+        }
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(this);
+        if (point.Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonReleased)
+            return;
+
+        draggingNode = null;
     }
 }
