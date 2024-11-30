@@ -22,6 +22,7 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
     const float ClickToleranceMin = 0.15f;
     const float ClickToleranceScale = 0.025f;
     const float PerkYMax = 18f;
+    const float PerkYMin = -3f;
 
     private float _nearClip = 1.0f;
     private float _farClip = 20480.0f;
@@ -515,7 +516,7 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
 
         float x = -nodePosition.X / StarXIncrement;
         float y = nodePosition.Y / StarYIncrement;
-        if (y > PerkYMax)
+        if (y > PerkYMax || y < PerkYMin)
             return (float.NaN, float.NaN);
         return (x, y);
     }
