@@ -51,6 +51,8 @@ internal class OpenGlShape
     private Texture? _sourceTexture;
     private Texture? _grayscaleTexture;
 
+    internal Transform WorldTransform => _worldTransform;
+
     public bool HasAlpha => _alphaProperty is not null;
 
     internal delegate Texture? TextureResolver(string path);
@@ -89,24 +91,26 @@ internal class OpenGlShape
         _shaderProperty = nif.GetBlock<BSEffectShaderProperty>(shape.ShaderPropertyRef);
         if (_shaderProperty is not null)
         {
-            var sourceTexture = _shaderProperty.GetSourceTexture().Content;
+            var sourceTexture = _shaderProperty.SourceTexture().Content;
             if (sourceTexture.Length > 0)
             {
                 _sourceTexture = resolveTexture(sourceTexture);
                 _sourceTexture?.Init(
                     gl,
                     TextureWrapMode.Repeat,
-                    TextureWrapMode.Repeat);
+                    TextureWrapMode.Repeat,
+                    useMipmap: true);
             }
 
-            var grayscaleTexture = _shaderProperty.GetGrayscaleTexture().Content;
+            var grayscaleTexture = _shaderProperty.GrayscaleTexture().Content;
             if (grayscaleTexture.Length > 0)
             {
                 _grayscaleTexture = resolveTexture(grayscaleTexture);
                 _grayscaleTexture?.Init(
                     gl,
                     TextureWrapMode.MirroredRepeat,
-                    TextureWrapMode.MirroredRepeat);
+                    TextureWrapMode.MirroredRepeat,
+                    useMipmap: false);
             }
         }
     }
@@ -168,7 +172,7 @@ internal class OpenGlShape
             _shaderProperty.UVScale.U,
             _shaderProperty.UVScale.V);
 
-        var baseColor = _shaderProperty.GetBaseColor();
+        var baseColor = _shaderProperty.BaseColor();
         gl.Uniform4(
             uniforms.BaseColor,
             baseColor.R,
@@ -176,7 +180,7 @@ internal class OpenGlShape
             baseColor.B,
             baseColor.A);
 
-        var baseColorScale = _shaderProperty.GetBaseColorScale();
+        var baseColorScale = _shaderProperty.BaseColorScale();
         gl.Uniform4(
             uniforms.BaseColorScale,
             baseColorScale,
@@ -186,7 +190,7 @@ internal class OpenGlShape
 
         gl.Uniform4(
             uniforms.LightingInfluence,
-            _shaderProperty.GetLightingInfluence() / 255f,
+            _shaderProperty.LightingInfluence() / 255f,
             0f,
             0f,
             0f);
@@ -196,7 +200,7 @@ internal class OpenGlShape
         var shaderFlags1 = _shaderProperty.ShaderFlags_SSPF1;
         var shaderFlags2 = _shaderProperty.ShaderFlags_SSPF2;
 
-        if (shaderFlags1.HasFlag(SkyrimShaderPropertyFlags1.ZBuffer_Test) && !HasAlpha)
+        if (shaderFlags1.HasFlag(SkyrimShaderPropertyFlags1.ZBuffer_Test))
         {
             gl.DepthFunc(DepthFunction.Lequal);
         }
@@ -219,7 +223,7 @@ internal class OpenGlShape
             shaderFlags1.HasFlag(SkyrimShaderPropertyFlags1.Greyscale_To_PaletteAlpha) ? 1 : 0);
 
         gl.DepthMask(
-            shaderFlags2.HasFlag(SkyrimShaderPropertyFlags2.ZBuffer_Write));
+            shaderFlags2.HasFlag(SkyrimShaderPropertyFlags2.ZBuffer_Write) && !HasAlpha);
 
         if (_alphaProperty is not null && _alphaProperty.Flags.AlphaBlend)
         {

@@ -126,7 +126,7 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
             _cImageShaders.ForEach(shader =>
             {
                 if (shader is not null)
-                    shader.GetBaseColor().A = shader == targetShader ? 1.0f : 0.0f;
+                    shader.BaseColor().A = shader == targetShader ? 1.0f : 0.0f;
             });
 
             RequestNextFrameRendering();
@@ -157,11 +157,11 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
             return;
 
         _effectShaderProgram.Deinit(gl);
-        _skydomeShapes.ForEach(shape => shape.Deinit(gl!));
+        _skydomeShapes.ForEach(shape => shape.Deinit(gl));
         _skydomeShapes.Clear();
-        _starsShapes.ForEach(shape => shape.Deinit(gl!));
+        _starsShapes.ForEach(shape => shape.Deinit(gl));
         _starsShapes.Clear();
-        _lineShapes.ForEach(shape => shape.Deinit(gl!));
+        _lineShapes.ForEach(shape => shape.Deinit(gl));
         _lineShapes.Clear();
     }
 
@@ -196,6 +196,12 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
             if (PerkStars is not null)
             {
                 _starsShapes = InitGl(PerkStars);
+                _starsShapes.Sort((s1, s2) =>
+                {
+                    float z1 = s1.WorldTransform.Translation.Z;
+                    float z2 = s2.WorldTransform.Translation.Z;
+                    return z1.CompareTo(z2);
+                });
             }
             _reloadStars = false;
         }
@@ -246,15 +252,15 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
             var yaxis = Vector3.Cross(zaxis, xaxis);
             var starsBillboard = new Matrix33
             {
-                M11 = xaxis.X,
-                M12 = xaxis.Y,
-                M13 = xaxis.Z,
-                M21 = yaxis.X,
-                M22 = yaxis.Y,
-                M23 = yaxis.Z,
-                M31 = zaxis.X,
-                M32 = zaxis.Y,
-                M33 = zaxis.Z,
+                M11 = xaxis[0],
+                M12 = xaxis[1],
+                M13 = xaxis[2],
+                M21 = yaxis[0],
+                M22 = yaxis[1],
+                M23 = yaxis[2],
+                M31 = zaxis[0],
+                M32 = zaxis[1],
+                M33 = zaxis[2],
             };
 
             foreach (var (index, node) in SelectedTree.Nodes)
@@ -272,7 +278,14 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
 
                 foreach (var starsShape in _starsShapes)
                 {
-                    starsShape.Draw(gl, _effectShaderProgram.Uniforms, starsTransform, starsBillboard);
+                    var transform = new Transform
+                    {
+                        Scale = StarScale,
+                        Translation = starsPos,
+                    } * parentTransform;
+                    transform.Rotation = starsBillboard;
+
+                    starsShape.Draw(gl, _effectShaderProgram.Uniforms, transform);
                 }
 
                 foreach (var childIndex in node.Children)
@@ -304,8 +317,9 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
                         var lineTransform = new Transform
                         {
                             Rotation = lineRotation,
-                            Scale = lineScale,
-                        } * starsTransform;
+                            Translation = starsPos,
+                            Scale = lineScale * StarScale,
+                        } * parentTransform;
 
                         Matrix4x4.Invert(lineTransform.ToMatrix(), out var lineTransformInv);
                         var ylocal = Vector3.UnitY;
@@ -372,7 +386,9 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
     {
         Skydome = skydome;
         _reloadSkydome = true;
-        FinishCameraIntro(skydome);
+
+        var cameraIntro = skydome.FindBlockByName<NiControllerSequence>("CameraIntro");
+        cameraIntro?.GotoTime(skydome, cameraIntro.StopTime);
 
         _cImageShaders.Clear();
         for (int i = 0; ; ++i)
@@ -411,12 +427,18 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
     {
         PerkStars = stars;
         _reloadStars = true;
+
+        var selected = stars.FindBlockByName<NiControllerSequence>("Owned");
+        selected?.GotoTime(stars, 0f);
     }
 
     internal void SetPerkLine(NifFile line)
     {
         PerkLine = line;
         _reloadLine = true;
+
+        var unlocked = line.FindBlockByName<NiControllerSequence>("Unlocked");
+        unlocked?.GotoTime(line, 0f);
     }
 
     internal void ShowPerks(int index, IActorValueInformationGetter actorValueInfo)
@@ -424,36 +446,6 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
         SelectedIndex = index;
         SelectedTree = new PerkTree(actorValueInfo);
         RequestNextFrameRendering();
-    }
-
-    private static void FinishCameraIntro(NifFile skydome)
-    {
-        var cameraIntro = skydome.FindBlockByName<NiControllerSequence>("CameraIntro");
-        if (cameraIntro is null)
-            return;
-
-        foreach (var block in cameraIntro.ControlledBlocks)
-        {
-            NiMultiTargetTransformController? controller =
-                skydome.GetBlock<NiMultiTargetTransformController>(block.Controller);
-            if (controller is null)
-                continue;
-
-            NiTransformInterpolator? interpolator =
-                skydome.GetBlock<NiTransformInterpolator>(block.Interpolator);
-            if (interpolator is null)
-                continue;
-
-            NiTransformData? data = skydome.GetBlock(interpolator.Data);
-            if (data is null)
-                continue;
-
-            var obj = skydome.FindBlockByName<NiAVObject>(block.NodeName.String);
-            if (obj is not null)
-            {
-                controller.UpdateTransform(obj, data, cameraIntro.StopTime);
-            }
-        }
     }
 
     public bool HitTest(Point point) => Bounds.Contains(point);

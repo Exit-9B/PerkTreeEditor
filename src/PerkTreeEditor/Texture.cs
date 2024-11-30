@@ -58,7 +58,7 @@ internal class Texture
         MipLevels = metadata.MipLevels;
     }
 
-    public void Init(GL gl, TextureWrapMode wrapS, TextureWrapMode wrapT)
+    public void Init(GL gl, TextureWrapMode wrapS, TextureWrapMode wrapT, bool useMipmap)
     {
         if (_texture != 0)
             return;
@@ -66,11 +66,14 @@ internal class Texture
         _texture = gl.GenTexture();
 
         gl.BindTexture(Target, _texture);
+
         gl.TexParameter(Target, TextureParameterName.TextureMaxLevel, MipLevels - 1);
-        gl.TexParameter(
-            Target,
-            TextureParameterName.TextureMinFilter,
-            (int)(MipLevels > 1 ? TextureMinFilter.LinearMipmapLinear : TextureMinFilter.Linear));
+
+        var minFilter = useMipmap && MipLevels > 1
+            ? TextureMinFilter.LinearMipmapLinear
+            : TextureMinFilter.Linear;
+
+        gl.TexParameter(Target, TextureParameterName.TextureMinFilter, (int)minFilter);
         gl.TexParameter(Target, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
         gl.TexParameter(Target, TextureParameterName.TextureWrapS, (int)wrapS);
         gl.TexParameter(Target, TextureParameterName.TextureWrapT, (int)wrapT);
