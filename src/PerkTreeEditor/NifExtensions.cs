@@ -133,15 +133,18 @@ internal static class NifExtensions
                     if (extraTarget is null || extraTarget.Name.String != nodeName)
                         continue;
 
-                    extraTarget.Scale = scale;
-                    extraTarget.Translation = translation;
+                    if (data.Scales.NumKeys != 0)
+                        extraTarget.Scale = scale;
+
+                    if (data.Translations.NumKeys != 0)
+                        extraTarget.Translation = translation;
                 }
             }
         }
         else if (interpolator is NiPoint3Interpolator pointInterpolator)
         {
             NiPosData? data = nif.GetBlock(pointInterpolator.Data);
-            if (data is null)
+            if (data is null || data.Data.NumKeys == 0)
                 return;
 
             if (controller is BSEffectShaderPropertyColorController colorController)
@@ -165,7 +168,7 @@ internal static class NifExtensions
         else if (interpolator is NiFloatInterpolator floatInterpolator)
         {
             NiFloatData? data = nif.GetBlock(floatInterpolator.Data);
-            if (data is null)
+            if (data is null || data.Data.NumKeys == 0)
                 return;
 
             if (controller is BSEffectShaderPropertyFloatController floatController)
