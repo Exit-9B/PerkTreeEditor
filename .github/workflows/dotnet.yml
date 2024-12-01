@@ -21,11 +21,11 @@ jobs:
       with:
         dotnet-version: 9.0.x
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore -r win-x64
     - name: Build
-      run: dotnet build src/PerkTreeEditor -a x64 -c Release --no-restore
+      run: dotnet build src/PerkTreeEditor -c Release --no-restore -r win-x64 --self-contained
     - name: Publish
-      run: dotnet publish src/PerkTreeEditor -a x64 -c Release --no-build -o ${{ github.workspace }}/install --sc
+      run: dotnet publish src/PerkTreeEditor -c Release --no-build -o ${{ github.workspace }}/install -r win-x64 --sc
     - name: Upload
       uses: actions/upload-artifact@v4.4.3
       with:
