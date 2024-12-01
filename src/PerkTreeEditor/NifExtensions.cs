@@ -103,14 +103,16 @@ internal static class NifExtensions
         {
             NiTimeController? controller = nif.GetBlock(block.Controller);
             NiInterpolator? interpolator = nif.GetBlock(block.Interpolator);
+            string? nodeName = block.NodeName.String;
 
-            controller?.Update(interpolator, nif, controllerSequence.StopTime);
+            controller?.Update(interpolator, nodeName, nif, controllerSequence.StopTime);
         }
     }
 
     public static void Update(
         this NiTimeController controller,
         NiInterpolator? interpolator,
+        string? nodeName,
         NifFile nif,
         float time)
     {
@@ -128,7 +130,7 @@ internal static class NifExtensions
                 foreach (var extraTargetRef in transformController.ExtraTargets.References)
                 {
                     var extraTarget = nif.GetBlock(extraTargetRef);
-                    if (extraTarget is null)
+                    if (extraTarget is null || extraTarget.Name.String != nodeName)
                         continue;
 
                     extraTarget.Scale = scale;
