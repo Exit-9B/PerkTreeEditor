@@ -477,7 +477,7 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
             return;
 
         if (nearestDistance < ClickTolerancePlanar ||
-            Distance(PerkToPoint(nearestNode), position) < ClickTolerancePixels)
+            Point.Distance(PerkToPoint(nearestNode), position) < ClickTolerancePixels)
         {
             draggingNode = nearestNode;
         }
@@ -596,12 +596,5 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
         }
 
         return nearestNode;
-    }
-
-    private static double Distance(Point p1, Point p2)
-    {
-        double dx = p2.X - p1.X;
-        double dy = p2.Y - p1.Y;
-        return Math.Sqrt(dx * dx + dy * dy);
     }
 }
