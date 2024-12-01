@@ -23,7 +23,7 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
-      run: dotnet build -c Release --no-restore
+      run: dotnet build src/PerkTreeEditor -c Release --no-restore
     - name: Publish
       run: dotnet publish -c Release --no-build -o ${{ github.workspace }}/install --sc
     - name: Upload
