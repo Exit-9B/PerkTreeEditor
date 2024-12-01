@@ -19,9 +19,9 @@ namespace PerkTreeEditor;
 
 public class SkydomeView : OpenGlControlBase, ICustomHitTest
 {
-    const float ClickToleranceMin = 0.15f;
-    const float ClickToleranceScale = 0.025f;
-    const float PerkYMax = 18f;
+    const float ClickTolerancePlanar = 0.32f;
+    const double ClickTolerancePixels = 8d;
+    const float PerkYMax = 100f;
     const float PerkYMin = -3f;
 
     private float _nearClip = 1.0f;
@@ -144,6 +144,15 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
     private Vector3 CameraUp { get; set; }
     private Vector3 CameraLookAt { get; set; }
 
+    private Matrix4x4 CameraView => Matrix4x4.CreateLookTo(CameraPosition, CameraLookAt, CameraUp);
+
+    private Matrix4x4 CameraProjection =>
+            Matrix4x4.CreatePerspectiveFieldOfView(
+                float.DegreesToRadians(FOV),
+                (float)(Bounds.Width / Bounds.Height),
+                NearClip,
+                FarClip);
+
     protected override void OnOpenGlInit(GlInterface gl_)
     {
         gl = GL.GetApi(gl_.GetProcAddress);
@@ -221,15 +230,7 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
         if (_effectShaderProgram.Uniforms is null)
             return;
 
-        Matrix4x4 cameraView = Matrix4x4.CreateLookTo(CameraPosition, CameraLookAt, CameraUp);
-        Matrix4x4 cameraProj =
-            Matrix4x4.CreatePerspectiveFieldOfView(
-                float.DegreesToRadians(FOV),
-                (float)(Bounds.Width / Bounds.Height),
-                NearClip,
-                FarClip);
-
-        Matrix4x4 cameraViewProj = cameraView * cameraProj;
+        Matrix4x4 cameraViewProj = CameraView * CameraProjection;
 
         using var ctx = _effectShaderProgram.Use(gl);
 
@@ -361,14 +362,6 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
         }
     }
 
-    private Vector3 GetPerkPosition(PerkTree.Node node)
-        => new()
-        {
-            X = -node.X * StarXIncrement,
-            Y = node.Y * StarYIncrement,
-            Z = StarZInitialOffset - node.Y * StarZIncrement,
-        };
-
     private List<OpenGlShape> InitGl(NifFile nif)
     {
         static bool ShapeIsVisible(INiShape shape) =>
@@ -450,13 +443,84 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
 
     public bool HitTest(Point point) => Bounds.Contains(point);
 
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        if (draggingNode is null)
+            return;
+
+        var position = e.GetPosition(this);
+        if (!Bounds.Contains(position))
+            return;
+
+        var (x, y) = PointToPerkCoordinates(position);
+        if (float.IsNaN(x) || float.IsNaN(y) ||  y > PerkYMax || y < PerkYMin)
+            return;
+
+        draggingNode.X = x;
+        draggingNode.Y = y;
+
+        RequestNextFrameRendering();
+    }
+
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(this);
+        if (point.Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+            return;
+
+        var position = point.Position;
+        var (x, y) = PointToPerkCoordinates(position);
+
+        PerkTree.Node? nearestNode = FindNearestNode(x, y, out float nearestDistance);
+
+        if (nearestNode is null)
+            return;
+
+        if (nearestDistance < ClickTolerancePlanar ||
+            Distance(PerkToPoint(nearestNode), position) < ClickTolerancePixels)
+        {
+            draggingNode = nearestNode;
+        }
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(this);
+        if (point.Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonReleased)
+            return;
+
+        draggingNode = null;
+    }
+
+    private Vector3 GetPerkPosition(PerkTree.Node node)
+        => new()
+        {
+            X = -node.X * StarXIncrement,
+            Y = node.Y * StarYIncrement,
+            Z = StarZInitialOffset - node.Y * StarZIncrement,
+        };
+
+    private Point PerkToPoint(PerkTree.Node node)
+    {
+        var screenPos =
+            Vector4.Transform(
+                GetPerkPosition(node),
+                _cachedPointTransform.ToMatrix() * CameraView * CameraProjection);
+
+        screenPos /= screenPos.W;
+
+        return new Point(
+            (0.5 + screenPos.X * 0.5) * Bounds.Width,
+            (0.5 - screenPos.Y * 0.5) * Bounds.Height);
+    }
+
     private (float x, float y) PointToPerkCoordinates(Point p)
     {
         var pointMatrix = _cachedPointTransform.ToMatrix();
         if (!Matrix4x4.Invert(pointMatrix, out Matrix4x4 pointInverse))
             return (float.NaN, float.NaN);
 
-        Matrix4x4 view = Matrix4x4.CreateLookTo(CameraPosition, CameraLookAt, CameraUp);
+        Matrix4x4 view = CameraView;
         if (!Matrix4x4.Invert(view, out Matrix4x4 viewInverse))
             return (float.NaN, float.NaN);
 
@@ -508,45 +572,15 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
 
         float x = -nodePosition.X / StarXIncrement;
         float y = nodePosition.Y / StarYIncrement;
-        if (y > PerkYMax || y < PerkYMin)
-            return (float.NaN, float.NaN);
         return (x, y);
     }
 
-    protected override void OnPointerMoved(PointerEventArgs e)
+    private PerkTree.Node? FindNearestNode(float x, float y, out float nearestDistance)
     {
-        if (draggingNode is null)
-            return;
-
-        var position = e.GetPosition(this);
-        if (!Bounds.Contains(position))
-            return;
-
-        var (x, y) = PointToPerkCoordinates(position);
-        if (float.IsNaN(x) || float.IsNaN(y))
-            return;
-
-        draggingNode.X = x;
-        draggingNode.Y = y;
-
-        RequestNextFrameRendering();
-    }
-
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        if (SelectedTree is null)
-            return;
-
-        var point = e.GetCurrentPoint(this);
-        if (point.Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
-            return;
-
-        var position = point.Position;
-        var (x, y) = PointToPerkCoordinates(position);
-
         PerkTree.Node? nearestNode = null;
-        float nearestDistance = float.MaxValue;
-        foreach (var (index, node) in SelectedTree.Nodes)
+        nearestDistance = float.MaxValue;
+
+        foreach (var (index, node) in SelectedTree?.Nodes ?? [])
         {
             if (index == 0)
                 continue;
@@ -561,19 +595,13 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
             }
         }
 
-        if (nearestNode is not null &&
-            nearestDistance < ClickToleranceMin + Math.Max(0f, nearestNode.Y * ClickToleranceScale))
-        {
-            draggingNode = nearestNode;
-        }
+        return nearestNode;
     }
 
-    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    private static double Distance(Point p1, Point p2)
     {
-        var point = e.GetCurrentPoint(this);
-        if (point.Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonReleased)
-            return;
-
-        draggingNode = null;
+        double dx = p2.X - p1.X;
+        double dy = p2.Y - p1.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
     }
 }
