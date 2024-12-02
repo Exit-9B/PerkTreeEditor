@@ -10,7 +10,6 @@ using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Skyrim;
 using NiflySharp;
 using Noggog;
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -108,7 +107,7 @@ public partial class MainWindow : Window
     };
 
     private readonly IGameEnvironment<ISkyrimMod, ISkyrimModGetter> GameEnv;
-    private readonly Dictionary<string, WeakReference<Texture>> TextureHolder = [];
+    private readonly Dictionary<string, Texture> TextureHolder = [];
     private SkillGroup? SelectedGroup;
 
     public MainWindow()
@@ -123,9 +122,9 @@ public partial class MainWindow : Window
         Texture? ResolveTexture(string path)
         {
             path = path.ToLower().Replace('/', '\\');
-            if (TextureHolder.TryGetValue(path, out var textureRef))
+            if (TextureHolder.TryGetValue(path, out var texture))
             {
-                if (textureRef.TryGetTarget(out var texture))
+                if (texture.TryAcquire())
                 {
                     return texture;
                 }
@@ -136,8 +135,8 @@ public partial class MainWindow : Window
             {
                 try
                 {
-                    var texture = new Texture(stream);
-                    TextureHolder[path] = new(texture);
+                    texture = new Texture(stream);
+                    TextureHolder[path] = texture;
                     return texture;
                 }
                 catch { }
