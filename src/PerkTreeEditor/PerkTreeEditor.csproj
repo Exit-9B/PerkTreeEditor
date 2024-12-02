@@ -2,6 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
     <Nullable>enable</Nullable>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -33,5 +37,9 @@
     <PackageReference Include="Nifly" Version="0.1.0" />
     <PackageReference Include="Silk.NET.OpenGL" Version="2.22.0" />
     <PackageReference Include="System.Text.Json" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Mutagen.Bethesda.Skyrim" />
+    <TrimmerRootAssembly Include="NiflySharp" />
   </ItemGroup>
 </Project>
