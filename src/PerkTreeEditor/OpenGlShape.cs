@@ -165,6 +165,9 @@ internal class OpenGlShape
         Matrix4x4 World = world.ToMatrix();
         gl.UniformMatrix4(uniforms.World, 1, false, ref World.M11);
 
+        var shaderFlags1 = _shaderProperty.ShaderFlags_SSPF1;
+        var shaderFlags2 = _shaderProperty.ShaderFlags_SSPF2;
+
         gl.Uniform4(
             uniforms.TexcoordOffset,
             _shaderProperty.UVOffset.U,
@@ -173,6 +176,15 @@ internal class OpenGlShape
             _shaderProperty.UVScale.V);
 
         var baseColor = _shaderProperty.BaseColor();
+        var baseColorScale = _shaderProperty.BaseColorScale();
+
+        if (!shaderFlags2.HasFlag(SkyrimShaderPropertyFlags2.Vertex_Colors))
+        {
+            baseColor.R *= baseColorScale;
+            baseColor.G *= baseColorScale;
+            baseColor.B *= baseColorScale;
+        }
+
         gl.Uniform4(
             uniforms.BaseColor,
             baseColor.R,
@@ -180,13 +192,12 @@ internal class OpenGlShape
             baseColor.B,
             baseColor.A);
 
-        var baseColorScale = _shaderProperty.BaseColorScale();
         gl.Uniform4(
             uniforms.BaseColorScale,
             baseColorScale,
-            baseColorScale,
-            baseColorScale,
-            baseColorScale);
+            0f,
+            0f,
+            0f);
 
         gl.Uniform4(
             uniforms.LightingInfluence,
@@ -196,9 +207,6 @@ internal class OpenGlShape
             0f);
 
         gl.Uniform4(uniforms.PropertyColor, 1f, 1f, 1f, 1f);
-
-        var shaderFlags1 = _shaderProperty.ShaderFlags_SSPF1;
-        var shaderFlags2 = _shaderProperty.ShaderFlags_SSPF2;
 
         if (shaderFlags1.HasFlag(SkyrimShaderPropertyFlags1.ZBuffer_Test))
         {
