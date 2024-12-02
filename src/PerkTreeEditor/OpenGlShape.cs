@@ -141,6 +141,8 @@ internal class OpenGlShape
         gl.DeleteVertexArray(_vertexArray);
         gl.DeleteBuffer(_vertexBuffer);
         gl.DeleteBuffer(_elementBuffer);
+        _sourceTexture?.Release(gl);
+        _grayscaleTexture?.Release(gl);
     }
 
     public void Draw(

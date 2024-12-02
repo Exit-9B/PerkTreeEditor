@@ -1,15 +1,16 @@
 ﻿// SPDX-License-Identifier: GPL-3.0-or-later
-using DirectXTexNet;
+using Hexa.NET.DirectXTex;
 using Silk.NET.OpenGL;
 using System;
 using System.IO;
 
 namespace PerkTreeEditor;
 
-internal class Texture
+internal class Texture : IDisposable
 {
-    private readonly TexMetadata metadata;
-    private readonly ScratchImage scratch;
+    private uint refcount = 1;
+    private TexMetadata metadata;
+    private ScratchImage scratch;
 
     internal readonly struct FormatDesc(
         InternalFormat internalFormat,
@@ -27,8 +28,10 @@ internal class Texture
     internal FormatDesc Format { get; }
     public int ArraySize { get; }
     public int MipLevels { get; }
+    public bool IsNull => scratch.IsNull;
 
     private uint _texture;
+    private bool disposedValue;
 
     internal bool IsCompressed => Format.External == 0;
 
@@ -47,15 +50,15 @@ internal class Texture
 
         fixed (byte* ptr = bytes)
         {
-            var flags = DDS_FLAGS.FORCE_RGB;
-            metadata = TexHelper.Instance.GetMetadataFromDDSMemory((nint)ptr, bytes.Length, flags);
-            scratch = TexHelper.Instance.LoadFromDDSMemory((nint)ptr, bytes.Length, flags);
+            var flags = DDSFlags.ForceRgb;
+            scratch = DirectXTex.CreateScratchImage();
+            DirectXTex.LoadFromDDSMemory(ptr, (nuint)bytes.Length, flags, ref metadata, ref scratch);
         }
 
         Target = GetTarget(metadata);
         Format = GetFormat(metadata);
-        ArraySize = metadata.ArraySize;
-        MipLevels = metadata.MipLevels;
+        ArraySize = (int)metadata.ArraySize;
+        MipLevels = (int)metadata.MipLevels;
     }
 
     public void Init(GL gl, TextureWrapMode wrapS, TextureWrapMode wrapT, bool useMipmap)
@@ -92,6 +95,42 @@ internal class Texture
         gl.BindTexture(Target, 0);
     }
 
+    public void Deinit(GL gl)
+    {
+        if (!scratch.IsNull)
+        {
+            DirectXTex.ScratchImageRelease(scratch);
+            scratch = ScratchImage.Null;
+        }
+
+        if (_texture != 0)
+        {
+            gl.DeleteTexture(_texture);
+            _texture = 0;
+        }
+    }
+
+    public bool TryAcquire()
+    {
+        if (!IsNull)
+        {
+            ++refcount;
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    public void Release(GL gl)
+    {
+        if (--refcount == 0)
+        {
+            Deinit(gl);
+        }
+    }
+
     public void Bind(GL gl, int unit)
     {
         gl.ActiveTexture((TextureUnit)((int)TextureUnit.Texture0 + unit));
@@ -113,7 +152,7 @@ internal class Texture
         }
         else if (metadata.ArraySize > 1)
         {
-            if (metadata.Dimension != TEX_DIMENSION.TEXTURE1D)
+            if (metadata.Dimension != TexDimension.Texture1D)
             {
                 return TextureTarget.Texture2DArray;
             }
@@ -122,11 +161,11 @@ internal class Texture
                 return TextureTarget.Texture1DArray;
             }
         }
-        else if (metadata.Dimension == TEX_DIMENSION.TEXTURE1D)
+        else if (metadata.Dimension == TexDimension.Texture1D)
         {
             return TextureTarget.Texture1D;
         }
-        else if (metadata.Dimension == TEX_DIMENSION.TEXTURE3D || metadata.IsVolumemap())
+        else if (metadata.Dimension == TexDimension.Texture3D || metadata.IsVolumemap())
         {
             return TextureTarget.Texture3D;
         }
@@ -142,7 +181,7 @@ internal class Texture
         var externalBGRA = hasSwizzle ? PixelFormat.Rgba : PixelFormat.Bgra;
         var internalBGRA = (InternalFormat)0x93A1;
 
-        return metadata.Format switch
+        return (DXGI_FORMAT)metadata.Format switch
         {
             DXGI_FORMAT.B4G4R4A4_UNORM => new(InternalFormat.Rgba4, PixelFormat.Rgba, PixelType.UnsignedShort4444, true),
             DXGI_FORMAT.B5G6R5_UNORM => new(InternalFormat.Rgb565, PixelFormat.Rgb, PixelType.UnsignedShort565, true),
@@ -236,8 +275,11 @@ internal class Texture
 
     private unsafe void LoadTextureImage(GL gl, int layer, int face, int level)
     {
+        if (scratch.IsNull)
+            return;
+
         var target = IsCubemap ? TextureTarget.TextureCubeMapPositiveX + face : Target;
-        var image = scratch.GetImage(level, face, layer);
+        var image = scratch.GetImage((nuint)level, (nuint)face, (nuint)layer);
 
         switch (Target)
         {
@@ -248,10 +290,10 @@ internal class Texture
                         target,
                         level,
                         Format.Internal,
-                        (uint)image.Width,
+                        (uint)image->Width,
                         0,
-                        (uint)image.SlicePitch,
-                        (void*)image.Pixels);
+                        (uint)image->SlicePitch,
+                        image->Pixels);
                 }
                 else
                 {
@@ -259,11 +301,11 @@ internal class Texture
                         target,
                         level,
                         Format.Internal,
-                        (uint)image.Width,
+                        (uint)image->Width,
                         0,
                         Format.External,
                         Format.Type,
-                        (void*)image.Pixels);
+                        image->Pixels);
                 }
                 break;
 
@@ -276,11 +318,11 @@ internal class Texture
                         target,
                         level,
                         Format.Internal,
-                        (uint)image.Width,
-                        (uint)(Target == TextureTarget.Texture1DArray ? layer : image.Height),
+                        (uint)image->Width,
+                        Target == TextureTarget.Texture1DArray ? (uint)layer : (uint)image->Height,
                         0,
-                        (uint)image.SlicePitch,
-                        (void*)image.Pixels);
+                        (uint)image->SlicePitch,
+                        image->Pixels);
                 }
                 else
                 {
@@ -288,12 +330,12 @@ internal class Texture
                         target,
                         level,
                         Format.Internal,
-                        (uint)image.Width,
-                        (uint)(Target == TextureTarget.Texture1DArray ? layer : image.Height),
+                        (uint)image->Width,
+                        Target == TextureTarget.Texture1DArray ? (uint)layer : (uint)image->Height,
                         0,
                         Format.External,
                         Format.Type,
-                        (void*)image.Pixels);
+                        image->Pixels);
                 }
                 break;
 
@@ -306,12 +348,12 @@ internal class Texture
                         target,
                         level,
                         Format.Internal,
-                        (uint)image.Width,
-                        (uint)image.Height,
+                        (uint)image->Width,
+                        (uint)image->Height,
                         (uint)layer,
                         0,
-                        (uint)image.SlicePitch,
-                        (void*)image.Pixels);
+                        (uint)image->SlicePitch,
+                        image->Pixels);
                 }
                 else
                 {
@@ -319,15 +361,41 @@ internal class Texture
                         target,
                         level,
                         Format.Internal,
-                        (uint)image.Width,
-                        (uint)image.Height,
+                        (uint)image->Width,
+                        (uint)image->Height,
                         (uint)layer,
                         0,
                         Format.External,
                         Format.Type,
-                        (void*)image.Pixels);
+                        image->Pixels);
                 }
                 break;
         }
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposedValue)
+        {
+            if (!scratch.IsNull)
+            {
+                DirectXTex.ScratchImageRelease(scratch);
+                scratch = ScratchImage.Null;
+            }
+            disposedValue = true;
+        }
+    }
+
+    ~Texture()
+    {
+        // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        Dispose(disposing: false);
+    }
+
+    public void Dispose()
+    {
+        // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }
