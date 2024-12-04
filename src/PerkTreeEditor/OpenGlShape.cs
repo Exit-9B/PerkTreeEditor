@@ -22,6 +22,26 @@ internal class OpenGlShape
         [FieldOffset(32)] public Vector3 Bitangent;
         [FieldOffset(44)] public ByteColor4 Color;
 
+        public Vertex()
+        {
+        }
+
+        public Vertex(BSVertexDataSSE data)
+        {
+            Position = data.Vertex;
+            TexCoord = new((float)data.UV.U, (float)data.UV.V);
+            var normal = data.Normal;
+            Normal = new(
+                (byte)normal.X / 255f * 2f - 1f,
+                (byte)normal.Y / 255f * 2f - 1f,
+                (byte)normal.Z / 255f * 2f - 1f);
+            Bitangent = new(
+                data.BitangentX,
+                (byte)data.BitangentY / 255f * 2f - 1f,
+                (byte)data.BitangentZ / 255f * 2f - 1f);
+            Color = data.VertexColors;
+        }
+
         public static void SetupVertexArrayAttribs(GL gl)
         {
             uint stride = (uint)Marshal.SizeOf<Vertex>();
@@ -59,11 +79,11 @@ internal class OpenGlShape
 
     public OpenGlShape(
         GL gl,
-        BSTriShape shape,
+        INiShape shape,
         NifFile nif,
         TextureResolver resolveTexture)
     {
-        _worldTransform = shape.WorldTransform(nif);
+        _worldTransform = ((NiAVObject)shape).WorldTransform(nif);
 
         _vertexArray = gl.GenVertexArray();
         _vertexBuffer = gl.GenBuffer();
@@ -117,21 +137,54 @@ internal class OpenGlShape
 
     private static Vertex[] CreateVertexData(BSTriShape shape)
         => shape.VertexDataSSE
-        .Select(data =>
-        new Vertex
-        {
-            Position = data.Vertex,
-            TexCoord = data.UV.ToVector2(),
-            Normal = data.Normal.ToVector3(),
-            Bitangent = new(
-                data.BitangentX,
-                (byte)data.BitangentY / 255f * 2f - 1f,
-                (byte)data.BitangentZ / 255f * 2f - 1f),
-            Color = data.VertexColors,
-        })
+        .Select(data => new Vertex(data))
         .ToArray();
 
-    private static ushort[] CreateElementData(BSTriShape shape)
+    private static Vertex[] CreateVertexData(INiShape shape)
+    {
+        if (shape is BSTriShape bsTriShape)
+            return CreateVertexData(bsTriShape);
+
+        NiGeometryData? data = shape.GeometryData;
+        if (data is null)
+            return [];
+
+        var result = new Vertex[shape.VertexCount];
+        for (int i = 0; i < shape.VertexCount; ++i)
+        {
+            if (shape.HasVertices)
+            {
+                result[i].Position = data.Vertices[i];
+            }
+
+            if (shape.HasUVs)
+            {
+                result[i].TexCoord = new(data.UVSets[i].U, data.UVSets[i].V);
+            }
+
+            if (shape.HasNormals)
+            {
+                result[i].Normal = data.Normals[i];
+            }
+
+            if (shape.HasTangents)
+            {
+                result[i].Bitangent = data.Bitangents[i];
+            }
+
+            if (shape.HasVertexColors)
+            {
+                result[i].Color.R = (byte)(data.VertexColors[i].R * 255f);
+                result[i].Color.G = (byte)(data.VertexColors[i].G * 255f);
+                result[i].Color.B = (byte)(data.VertexColors[i].B * 255f);
+                result[i].Color.A = (byte)(data.VertexColors[i].A * 255f);
+            }
+        }
+
+        return result;
+    }
+
+    private static ushort[] CreateElementData(INiShape shape)
         => shape.Triangles
         .SelectMany(triangle => new ushort[] { triangle.V1, triangle.V2, triangle.V3 })
         .ToArray();

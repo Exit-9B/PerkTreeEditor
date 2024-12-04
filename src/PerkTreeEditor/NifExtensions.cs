@@ -70,15 +70,6 @@ internal static class NifExtensions
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_lightingInfluence")]
     public extern static ref byte LightingInfluence(this BSEffectShaderProperty @this);
 
-    public static Vector2 ToVector2(this HalfTexCoord uv)
-        => new((float)uv.U, (float)uv.V);
-
-    public static Vector3 ToVector3(this ByteVector3 bvec)
-        => new(
-            (byte)bvec.X / 255f * 2f - 1f,
-            (byte)bvec.Y / 255f * 2f - 1f,
-            (byte)bvec.Z / 255f * 2f - 1f);
-
     public static Transform LocalTransform(this NiAVObject obj)
         => new()
         {

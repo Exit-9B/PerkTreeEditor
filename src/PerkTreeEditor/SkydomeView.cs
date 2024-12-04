@@ -369,7 +369,7 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
 
         return
             nif.Blocks
-            .OfType<BSTriShape>()
+            .OfType<INiShape>()
             .Where(ShapeIsVisible)
             .Select(shape => new OpenGlShape(gl!, shape, nif, ResolveTexture))
             .ToList();
@@ -386,7 +386,7 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
         _cImageShaders.Clear();
         for (int i = 0; ; ++i)
         {
-            var cImage = skydome.FindBlockByName<BSTriShape>($"cImage{i:00}");
+            var cImage = skydome.FindBlockByName<NiAVObject>($"cImage{i:00}") as INiShape;
             if (cImage is null)
                 break;
 
