@@ -271,7 +271,6 @@ internal class OpenGlShape
         {
             gl.DepthFunc(DepthFunction.Always);
         }
-            gl.DepthFunc(DepthFunction.Always);
 
         gl.Uniform1(
             uniforms.VC,

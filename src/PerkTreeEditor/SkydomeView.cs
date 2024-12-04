@@ -185,7 +185,6 @@ public class SkydomeView : OpenGlControlBase, ICustomHitTest
             return;
 
         gl.Viewport(0, 0, (uint)Bounds.Width, (uint)Bounds.Height);
-        gl.Enable(EnableCap.DepthTest);
         gl.Enable(EnableCap.CullFace);
         gl.CullFace(TriangleFace.Back);
 
